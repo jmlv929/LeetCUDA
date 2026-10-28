@@ -1,2 +1,5 @@
 figures/zhihu/
 figures/zhihu/*
+
+# Personal annotated book tracked in the fork
+!/leetcuda-20261027.pdf
