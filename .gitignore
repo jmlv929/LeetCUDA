@@ -42,3 +42,10 @@ kernels/interview/book/**/*.toc
 kernels/interview/book/**/*.out
 kernels/interview/book/**/*.log
 
+# Nutstore sync conflict copies
+*-NSConflict/
+
+# Local reference PDF downloads
+/leetcuda-*.pdf
+/slides/cuda-slides/cudabook.pdf
+
