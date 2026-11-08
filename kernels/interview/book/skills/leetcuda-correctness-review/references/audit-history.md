@@ -1017,3 +1017,196 @@ git diff --check：通过
 ### 收尾结论
 
 机械面与通读面前后两轮（R61 通读 + R62 机械）合计只产出 1 MEDIUM（已修）+ 9 LOW，其中 4 条 LOW 是行号/代码块截断（已修）。**正确性自审到此收账**：后续只按「改哪章审哪章」做定点复核，全书通读与全书机械扫描都不再例行；残余风险已转为性能数字复测（ch04/ch13/ch19/ch32）与 6 条已知 medium，均需 GPU 或补证据，不属审稿可解。
+
+## R63（2026-10-27）：ch00–19b + 附录严重问题定点修复
+
+- 范围：静态审核确认的 4 项问题，按用户要求全部修复；只改书稿、RTD 词典与验收记录，不改冻结 CUDA 源码。
+- WGMMA descriptor：ch13/ch14/ch23 统一改为「非 1024B 边界必须显式写非零 `base_offset`；当前 `make_smem_desc` 置 0 并配合 1024B 对齐」，删除 `start_address` 自动补偿和当前 WGMMA 实现只需 128B 的说法。ch14 旧「核校通过」改为带 PTX 证据的勘误。
+- ch19 cp.async：修正 V 预取与 smem 两处资源/流水断言。关键反向复核结论：QK/V 不是两条独立等待队列，`cp.async.wait_group N` 只保留最近 N 组并要求所有更早组完成，所以即使 `Sv>=3`，Phase 0 的 V 也不能横跨后续 QK/softmax；`Sv>=3` 的真实 V 重叠只在 Phase 3 内。图 19-4 灰底改为逻辑间隔，默认 `Sk=Sv=2` 明确无跨计算重叠，同时删除对应性能机制归因。smem 改为只由 `Sk/Sv` 决定，`C` 只影响迭代与 O 寄存器。
+- appB：`1.4→0.3ms` 从 fused 单 launch / `N=8192` 改为 ΔS WMMA 替换 torch 链 / `N=16384`；为消除新增表格 Overfull，将不可断行的 `bmm+transpose+cast` 改为可断行列举。
+- 同源传播：`ch23-cute-swizzle-tma.tex` 一并修正；图 19-4 的 4 个 `figures-en.json` 词条同步换 key/value，未改 listing，代码块与公式词典无需变更。
+- 验证：主 `book.pdf` 589 页 / 0 error / 0 missing char / Overfull 16（基线一致），跨文件 lint 0 fail；`verify_anchors.py` 33 章 ALL GREEN。RTD 全量 `build.sh` 全项 OK（英文图 195/195、图词典 1922、代码块 772/772、公式 121/121）；`visual_check` 93 页 MathJax/残迹/console/资源失败/page_overflow 均 0。图 19-4 以 180dpi 渲染并放大检查，无文字或箭头重叠。
+- 未验证：未重跑性能 benchmark；历史性能数字只修正归属，不视为复测。ch13 不做 sm_90a 运行验收。cute-zhihu 源未改，不触发其独立 PDF 构建；RTD 已包含该集合的全量核对。
+
+## R64（2026-10-27）：ch20–37 技术问题与 CuTe 白皮书翻译修复
+
+- 范围：按用户要求修复审核报告一、二中的全部问题；主 agent 完成，不使用 subagent，不改 CUDA 源码。
+- 主书 6 项：ch20 将块数比例限定为连续单位 stride 且整除，一般 rest 由 complement 决定；主机端 static_assert 验证 `logical_divide(10:1,4:1)` 为 shape `(4,3)`、size `12`。ch26 统一 PV 单次视图 `[64,16]`、完整 O chunk `[64,64]` 与 chunk 内 4 个 N-tile。ch27 把相对误差上界限定到规格化域，补 E2M1 的 0.75/0.25 反例。ch34 改正 E4M3 仅 `E=1111,M=111` 为 NaN。ch37 将 `BK=64` 归为教学实现选择，官方 SM120 CuTe DSL 的 BK=128/256 作为反证。ch26b/ch35/ch37 按 CUDA non-exited 线程语义重写 NamedBarrier 理由，保留实现。
+- 白皮书：修复 `up to N`、`typically means`、`enables the weak congruence condition` 三处误译；补回结论漏句。新增 `wp7-references.tex`，按官方英文 PDF 实际列出的 29 条及原顺序补齐参考文献（不是把含 35 条的原始 .bib 全量照搬）。
+- RTD 图词典同步替换 7 个 key/value，覆盖率恢复 1791/1791；代码块与公式词典无需变更。
+- 验收自审：ch20 初版曾把 ceil(size ratio) 推广到任意 stride，复核后收紧。ch36 UE4M3 的 134.3→128 候选经码点复算撤回：该 binade 步长为 16，邻点是 128/144，原书正确。
+- RTD 特殊问题：`enumerate` 带 label 选项被 Pandoc/MyST 转成字面 `::: enumerate`，文件级 verify 未捕获；直接检查 HTML 后改为显式 `[1]`–`[29]` 编号段落。最终 HTML 编号序列完整且无指令残迹。这提醒我们：新增列表结构除全量构建外还要检查实际 HTML 呈现。
+- 验证：主 `book.pdf` 591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15；4 张修改图 180dpi 渲染并放大无重叠。RTD 全量全项 OK（英文图 195/195、图词典 1922、code 772/772、math 121/121）；visual_check 93 页 MathJax/残迹/console/资源失败/page_overflow 均 0；anchors 33 章 ALL GREEN。
+- 未验证：未重跑性能 benchmark，未做 sm_90a 运行验收；本轮为书稿与翻译修复。
+
+## R65（2026-10-28 起 / 2026-10-29 补完）：主 book 第四轮全量正确性复核（用户要求「没问题就收账」）
+
+- 触发：用户在 R63/R64 之后要求对主 book 再做一轮全量阅读审核，用于决定是否停止例行全书审核。主 agent 独立完成（不使用 subagent）。
+- 范围：`book.tex` 实际 input 的 41 个 chapter（含 ch19b 白皮书，仅作术语基线）+ 附录 A–E；`cute-zhihu` 不在本轮范围。
+- 方法（含一次返工）：先跑机械面（`lint_book.py` citations/tables/figures、`verify_anchors.py`、listing 路径与 linerange、permalink 按各自 commit 校验、tests 引用、appB 数字回指），再按章做 L0–L4。**首轮 ch00–ch15 逐章全文通读、ch16–ch37 与附录改用 claim 表面抽取，被用户当场质问「为什么不通读全文」；随后补读 ch16–ch37 + 附录 A–E 全文（分 20 余次 read_file），并据此修正台账与结论。** 教训已固化在 `memory/feedback_leetcuda_full_read.md`：说「全量」就必须逐章 `read_file` 读全文，不得用抽取代替，也不得只靠「报告里写明覆盖范围」免责。
+- 结果：机械面零 FAIL；逐章复算零 HIGH/MEDIUM，**新增 3 项 LOW**：① ch25:166 用 D=64 的 cosize（相加仅 32 KB）去解释 80 KB（实为 D=128 + Sk=2 的 40960 half）；② ch34:224 图注「$\lceil B_N/128\rceil$ … $B_N{=}256$ 时为 3 个」与同句算术（=2）及 §34.4.1「横跨两块」矛盾；③ ch37:995 的 186.5/314.6 与 ch35 表 186.8/315.1 属转录漂移。**三项 LOW 于 2026-10-29 按用户指示全部回修**（ch25 保留 D=64 实测并补 case C 的 D=128+K 两级算式；ch34 改「2 个，n 起始未按 128 对齐时最多 3 个」；ch37 统一 186.8/315.1）。补读段复算自洽的例子：ch16 AI=B_r=128 与 45 KB smem、ch17 158.7→190.4 +20%、ch18 129 arrive 与池 376≤512、ch19 AI=42.7 与 33792≤65536、ch20 cosize/compose/zd 双射、ch22 512 守恒与 acc_O=256、ch23 三档周期与 8×32 退化、ch24 48 KiB 与两套累加 128 regs、ch26 EURepeat 与 256>255、ch26b 2048=18×110+68、ch26c 16(S_K+S_V) KB 与 spill 表、ch28 192/96 MiB 与 π⁻¹、ch29 64512 与 π/π⁻¹ 双向、ch30 D/(2N_w) 与 D·M_w/4096、ch31 4.5 bit 与 π 32 列表、ch32 −11.3923/−2.585、ch33 全表比值与 1.22×、ch34 σ_ε 与 4σ 指纹、ch35 441.9/443.7 与 4.83→4.56 GB、ch36 0.145833→11.02%→14.38%、ch37 9216 B 与 +31%。
+- 撤回/维持：R62 已列的 P-5 appB 转录漂移（3.144 vs 3.145、2.71 vs 2.72）本轮再次复算——3.1445 属 tie 在舍入带内，2.7155 应落 2.72；两项均按用户 R62「不改」裁定维持，不计为新增缺陷。
+- 已知残余（不属审稿可解）：6 条 medium（ch26c VCPB STSM 计数、ch27「四个误差源」只列三项且内部仿真未归档、ch33 smooth-v +1.0% 机制、ch36 3.24%/10.17% 合成口径、ch17 Sk 饱和、ch29 wait 考据）仍需 GPU 复测或补证据；ch13/ch19/ch32 的性能数字未复测。
+- 验收：**回修后跑满三层闸门**——`book/build.sh` 591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15（与 R64 基线一致）；`lint_book.py` citations 0 fail（1 白名单 WARN）、tables 0、figures 0；RTD 全量 `./build.sh`（含 TikZ，未用 `--skip-tikz`）+ `convert.verify` 全项 OK + `tools.visual_check` 93 页 / 需处理 0；三页新文本在 HTML 中逐条命中。`CHECKLOG.md` 共 6 行记录（2 行 P-5 复核 + 汇总 + ch25 + ch34 + ch37 + 回修验收），逐章台账在 `book/.tmp/r65/ledger-shardA.md`。
+- 结论：主 book 结构性正确性高，可作为发布候选；**建议停止例行全书通读**，后续改为「改哪章审哪章」的定点复核 + 发布前三层构建验收。
+
+## R66（2026-11-01）：ch03 histogram 锚点定点复核与 2 处回修
+
+- 触发：用户 @ `base.cuh:381`（histogram kernel）要求评估主 book 当前正确性，随后要求复审并修复发现的问题。主 agent 独立完成，不使用 subagent。
+- 范围：`chapters/ch03-vectorize-atomic.tex` 全章 L0–L4 定点复核（histogram 所在章），非全书通读；`cute-zhihu` 不在范围。
+- 发现 2 项（1 B + 1 C），经反向自辩确认真问题后回修：
+  - **F1（B，L3 资源/类型计数）**：ch03:152–154 向量化公式把 grid 的 block 数误标为「线程」——「标量版 `N/T` 线程、vec4 版 `N/(4T)` 线程 × 2 条访存指令」。证据：`base.cuh` L315–316（relu 标量版 Block 256 → 共 N 线程）、L326–327（relu_vec4 Block 64 → 共 N/4 线程）；同章 L190/L478 明确 `N/T` 为 block 数；且与 L156「warp 级 `N/32`」（隐含标量版 N 线程）矛盾。回修为「`N` 线程 / `N/4` 线程」，与下文「线程数降 1/4」「warp 级 N/32→N/128」自洽。
+  - **F2（C，L4 表达一致性）**：ch03:402「histogram 比 elementwise 慢两个数量级（26.7 vs 2654 GB/s，0.63 ms vs 0.019 ms）」把时间口径（0.63/0.019≈33×）与「两个数量级」（100×）混用。回修为「慢约 33 倍（0.63 vs 0.019 ms）、有效带宽低约两个数量级（26.7 vs 2654 GB/s）」。同章 L187/L222/L228 的「低两个数量级」均修饰带宽（99×），本就正确，未动。
+- 同源传播：F1 公式改动使 RTD `_static/math-en.js` 旧公式 key 成死条目（convert.verify 报「公式 121 命中 120 + 死条目 1」）；已同步替换该条 key/value（`\frac{N}{T}`→`N`、`\frac{N}{4T}`→`\frac{N}{4}`），恢复 121/121。未改图/TikZ，figures-en/code-en 无需变更。
+- 验收（三层闸门全绿）：主 `book/build.sh` 591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15（与 R65 基线一致）；`lint_book.py` citations 0 fail（1 白名单 WARN）、tables 0、figures 0；RTD 全量 `./build.sh` + `convert.verify` 全项 OK（英文图 195/195、图词典 1922、代码块 772/772、公式 121/121）；`visual_check` 93 页 / 需处理 0。
+- 未验证：未重跑性能 benchmark；ch03 实测数字（26.7 GB/s、0.63 ms、2.6 ns/op）沿用既有口径，不视为复测。cute-zhihu 源未改，不触发其独立 PDF 构建。
+- 结论：主 book 维持 R65「发布候选」判定；本轮 2 项 B/C 已修，未推翻收账结论，但印证「改哪章审哪章」定点复核仍有低级别产出。
+
+## R67（2026-11-01）：用户重开主 book 全量审核，17 个根因回修
+
+- 触发与范围：用户明确要求继续全量审核，不能沿用 R65「收账」跳过。主 agent 独立完成，不使用 subagent。按当前 `book.tex` 实际输入全文阅读 54 个 `.tex`：主章 40（ch00–ch37 + ch26b/ch26c）、白皮书 9（ch19b+wp0–wp7，只作翻译基线）、附录 5。图、图注、表、Q&A、listing 与测试说明均纳入阅读。
+- 结果：确认并回修 17 个根因，涉及 ch01/ch06/ch15/ch17/ch18/ch20/ch22/ch26/ch26c/ch30/ch31/ch34/ch35/appB。主要是数学量词与维度、API 边界、图注/Q&A 与正文/表格脱节：LN/RMSNorm bias 前提、相近大数 cancellation、FA2 仍保留 online rescale、F32Acc 的 P 在 PV 前转 half、setmaxnreg 暂时不足只等待、CuTe 单调性看进位增量而非 stride 排序、MMA_N 补 ThrN、D=448 stages 例外、大 D 下 O(Bc) 占比方向、NVFP4 K 方向与 π、误差分布前提、s4 扫描结论和 appB min-of-N 口径。
+- 同源传播：ch15 图注与 ch18 正文、ch06/ch20/ch26c Q&A、ch35 与 appB 同步；ch31 图内 `π^{-1}→π` 使英文图 key 的数学占位符由两个减为一个，`figures-en.json` 已同步。未改 CUDA 源码、`book.tex` 结构、listing 或性能原始数字。
+- 撤回：TF32 随机误差候选经独立复算为 0.0030070，原书正确；128B 单事务与 32B sector 是本书并存的两种口径；Part V/VI 结构候选由旧目录快照造成，重读当前 `book.tex` 后撤回且未改主文件。
+- 验收：anchors 与 lint 全绿，permalinks 53 个、测试引用和 appB 回指通过；主 PDF 591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15；RTD 全量 build（未跳 TikZ）2518/2518 source blocks、英文图 1791/1791，其余全项 OK；浏览器 visual_check 93/93 页需处理 0。逐章与撤回台账在 `book/.tmp/r67/`。
+- 未验证：未重跑 GPU 性能 benchmark；ch13/sm_90a 仍仅静态核验。cute-zhihu 源未改，不触发独立 PDF；RTD 全量已覆盖其页面。
+
+## R68（2026-11-01）：快速全量自审，零新增确证错误
+
+- 范围：按用户要求只做快速全量，不再逐字重读 54 个输入。主 agent 对当前 chapters+appendices 跑机械检查和高风险扫描，并逐 hunk 复审 R67 当前技术 diff；白皮书仍只作翻译基线。
+- 覆盖与结果：扫描 1115 条候选，人工复核其中 311 条高优先级命中（数理逻辑/图注/wait 106 条，全称/双射/整除/零拷贝等 205 条）。lint 0 fail、anchors 33 章全绿、permalinks 53 与 tests refs 9 均为 FAIL 0；listing/appB 告警均为既有脚本口径，无新增失败。新增确证书稿错误 0，书稿回修 0。
+- R67 公式反证：对 ch20 单调性充要条件穷举 rank 1–3、shape 1–4、stride 0–8 共 47988 个 flat 非负 stride 布局，单调性与条件全部一致。脚本首轮 5820 个 mismatch 是把 size-1 维的不存在进位也纳入条件；按原文“实际发生的进位”修正脚本量词后 mismatch=0，候选撤回，不改书稿。
+- 验证边界：本轮无书稿改动，未触发 PDF/RTD 闸门；R67 的 PDF/RTD/visual_check 结果只作既有基线，不冒充本轮新跑。GPU benchmark 与 sm_90a 运行仍未验证。台账在 `book/.tmp/r68/summary.md`。
+
+## R69（2026-11-02）：用户要求再开一轮"全量深度审核"，只审不改，9 项候选落盘
+
+- 触发与范围：用户明确"继续做新一轮全量深度审核，发现问题就记录、不修改"。主 agent 独立完成，不使用 subagent。按当前 `book.tex` 输入**逐文件全文通读 41 章 + 5 附录**（含 TikZ 节点、图注、表、Q&A、listing 标题与测试说明）；ch19b 的 8 个 wp 译文按 skill §1.1 只作翻译基线，本轮未逐段重读（已在报告"未验证边界"声明）。
+- 机械层：`verify_anchors.py` 33 章全绿；`lint_book.py` 三类 0 fail；appD 53 条 permalink 与 appB 回指 OK；appB 派生量扫描 11 个 token 均既有口径。**无结构性回归**。
+- 结果：9 项候选 + 3 项 observation，**全部落在 L4 表达一致性/口径层，无 A 级（改变结论）项**：
+  - C-03（B 级·同章自相矛盾）ch02:272「bench 显示这就是真瓶颈」vs ch02:469–472「由总时长反推，不能单独当因果证据，仍需减少 G 的 A/B」——前句说过头，appB 已按后句口径写。
+  - C-05 ch12:379–380「Tn ≤ ⌈R/Tm⌉ 时收益趋零（4096³ 仅 +0.3%）」——4096³ 的 Tn=32 > ⌈R/Tm⌉=4，判据与例子互斥；真实机制是 96 MB L2 容量（37.7/24.1 MB 都装得下 vs 116/24.1 MB）。
+  - C-04 ch03:454「慢百倍（99 倍差）」把带宽比当时间比（实测时间 33×、带宽 99×），R66 只回修了 §perf 侧。
+  - C-02 ch01:403/455–458「Part I 前三章」——Part I 含 ch00，故前三章是 ch00/01/02，但三条手段落在 ch03/ch03/ch02。
+  - C-07 appE:58「A. Milakov」应为「M. Milakov」（arXiv:1805.02867 作者 Maxim），与 ch04:650 自相矛盾。
+  - C-08 ch35:691 扫描表 SKIP 注记 `---(123)`，按同列公式应为 120（不影响 SKIP 结论），需核打印源。
+  - C-09 ch37:750 图注「FP4 只比 FP8 快 6~40%」——4096³ 默认档 +5.0%、8192³ 默认档 −0.6%（表口径 −1.5%），低端不成立。
+  - C-06（observation）ch15:216 的 209.5 TFLOPS（F32Acc）与 ch15/16/17 的 ridge≈300（F16Acc≈419 T）是两个口径，算术自洽但全书未点明 2× 关系。
+  - O-1 ch29 图 29-reorg-free 的 π(s) 公式符号绑定未声明（按 t=lane&3 代入得 π(3)=6，与正文 π(3)=9 矛盾；按 r=s&3、t=s>>2 则一致）；O-2 ch26c:49 与 appD:55/anchors 的 642–1307 vs 643–1306 边界约定差异；O-3 ch27 与 ch30 的 Bc 分档未点明是两个家族。
+- 反向自辩后**撤回 7 项**（ch04 case A 的 N 语义、ch00 slack 2048、ch15 ridge 冲突、ch36 逐格误差表两格矩、ch30 交叉点 vs ch19、ch35 O staging 取等、ch31 π 闭式），全部经二次复算/回章核对后判为原书正确——记录在报告第五节，供下轮不要重复怀疑。
+- 验证边界：**本轮无书稿改动**，未触发 PDF/RTD 闸门；GPU 未复测（所有"实测"数字只做量纲与横向一致性核对）；sm_90a 仍仅静态核验。报告与复算记录在 `book/.tmp/r69/report.md`。
+
+## R70（2026-11-02）：R69 自审结论再复核，9 个根因回修并通过三层验收
+
+- 触发与范围：用户要求继续深度审核 R69 的「自审修订结果」，对确有问题的项进行修正。主 agent 独立复核，不使用 subagent；逐项回读现行正文、同章后文、冻结源码、全书同源表格与 PDF/网页产物，不直接照搬 R69 的建议修法。
+- 复核中修正的两条审核方法：① C-02 不改成含混的「前四章」，而在 ch01 正文/TikZ/图注直接标明 ch02/ch03；② C-06 不把推测的「F16Acc=2×F32Acc」写成新断言，只删除全仓无出处、且被 ch24 同书 F32Acc 实测 226.0/242.4 TFLOPS 超越的 209.5「峰值」及其 0.66 ms 换算，保留有实测依据的 166.6 TFLOPS/0.83 ms。
+- 回修 9 个根因：ch01 的 Part I 章数口径；ch02 把「真瓶颈」降为「与原子瓶颈一致、归因尚未闭合」；ch03 区分耗时 33× 与带宽 99×；ch12 删除与 4096³ 互斥的 `Tn≤⌈R/Tm⌉` 判据，改用 37.7/24.1 MB 与 116.4/24.1 MB 的 L2 footprint 解释；ch15 删除 209.5 峰值；appE 改 `M. Milakov`；ch35 按 traits 公式把 `(123)` 改为 `(120)`；ch37 图注改为默认档 +5%/−1%、宽 tile +35%～40%；ch29 将 π 改为只含 s 的等价闭式，消除与同图 `t=lane&3` 的符号冲突。π 的 16 点像与逆置换已穷举核对。
+- 边界与传播：O-2 的行区间边界约定和 O-3 的 Bc 家族限定不改。两处 TikZ 文案已同步 `figures-en.json`；在线翻译遇 429 后，两条新掩码 key 由主 agent 按当前 TikZ 源手工迁移，覆盖率恢复 1791/1791。未改冻结 CUDA 源码、`book.tex` 结构或 cute-zhihu 源。
+- 验收：`git diff --check` 通过；anchors 33 章 ALL GREEN；lint citations/tables/figures 均 0 fail（1 条既有白名单 WARN）；permalink 53 与 tests refs 9 均 FAIL 0，appB 11 个提示仍为既有派生量口径。主 PDF **591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15**，`pdftotext` 逐项命中新文本。RTD 全量 build（未跳 TikZ）第二轮全项 OK：英文图 195/195、代码 772/772、公式 121/121；`visual_check` **93 页 / 需处理 0**，ch01/ch29 改图另作单图截图复核，无文字或公式越框。
+- 未验证：未重跑 GPU 性能 benchmark，所有保留的实测数字不视为本轮复测；sm_90a 仍仅静态核验。逐项证据、修法和验收日志见 `book/.tmp/r69/report.md` 第十节及同目录日志。
+
+## R71（2026-11-02）：逐章全量再审核，7 项确证 + 3 项观察（只审不改）
+
+- 触发：用户要求“再做一轮逐章全量深度审核，尽量找出隐藏的错误”。审核对象为 `3dbd618` + 含 R70 未提交回修的当前工作树；主 agent 独立完成，不使用 subagent。逐文件全文通读 41 章 + 5 附录（正文、TikZ、图注、表、问答、listing 标题），ch19b 的 wp 译文按 skill §1.1 只作基线。
+- 机械层：anchors 33 章全绿；lint 三类 0 fail（1 条既有白名单 WARN）；appB 11 个提示仍为既有派生量口径；permalink 53、tests refs 9 均 FAIL 0。
+- 7 项确证（全部有同章/跨章/源码一级证据）：
+  - **R71-01 ch02 图 fig:2-2** 画了两次 `__syncthreads()`（L409/L424），但 `base.cuh:189` 的 `block_reduce_sum` 只有一次，正文 L342、问答 L578-580、步数式都写 1 次；第二次同步在协议上无对应。
+  - **R71-02 ch12 Q5 L1053-1056** 仍用 `Tn>√R` 解释 swizzle 收益，4096³ 的 Tn=32 远超 √110≈10.5 却只 +0.3%；R70 已把正文 L379-382 改成 L2 footprint 口径（37.7/24.1 MB vs 116.4/24.1 MB），Q5 未同步，且 `Tn×ceil(R/Tn)` 在 Tn>R 时也不是常驻集。
+  - **R71-03 ch33 L544-545** 称“最差 non-aligned-dense 8K FFPA 快 2.6%”，但同章表 L370 是 341.1 vs 342.3（FFPA 慢 0.35%），16384 慢 1.18%；最大胜差实际是 cross-dense 的 +4.0%。
+  - **R71-04 ch35 L896-897** 把 `384×168=64.5K` 套到“三个配置”，但 non-WS launch 是 256 线程（`fp8_gemm.cuh:376-377`、`:825`），256×168=43K，2 CTA=86K>64K 才仍限 1 CTA；只有两个 WS 配置是 384 线程。
+  - **R71-05 ch36 L575-579** 的“数值位”列混用口径：bf16 写 8（含隐含位的精度），e4m3 写 3、e2m1 写 1（显式尾数）；同表 RMS 用 p=8/4/2。两种口径都无法同时解释 8/3/1。
+  - **R71-06 ch37 L695/L757/L952/L987** 把“M,N,K 全 ≥4096”写成 `$MNK\ge4096$`；按字面乘积 64³ 也进宽档。`fp4_gemm.cuh:1289-1295` 注释为“MNK 全 >=4096”，实现是三维 &&。
+  - **R71-07 ch37 L925** 说 FP8“2 级 > 3 级，+7.7%”，但 7.7% 在 ch35 是 `ws128×256/s2` 对 `ws128²/s3` 的 tile+深度混合差；同几何纯深度差为 128² +2.8%、64×128 +8.3%。
+- 3 项观察：O-1 ch12:423 与 ch23:218-219 的 Swizzle 位宽字符串与 M=4,S=3 差 7 个“不变”位（源 `common.cuh:263` 同源，可能是不按比例示意）；O-2 ch36 L54-61 把 e2m1 的 e=0 binade 拆成两行，与“同一区间两码点”句不自洽；O-3 appD:46 的 ch26c 只链到 bench，未链 `ffpa_attn.cuh L642-1307` 内核本体，脚注 L643-1306 又差一行。
+- 反向自辩剔除：ch13 base_offset、ch23 SW32/64/128 M/S 表、ch36 逐格误差表、ch36 10.17% 增量、ch33 cross 0.76x、ch35 2048³ 宽档反例、ch37 R70 新措辞、ch11 ldmatrix sm_75 语句均确认无错，详见报告第四节。
+- 验证边界：**本轮只审不改**，未触发 PDF/RTD/visual_check；未重跑 GPU benchmark；sm_90a 仍仅静态核验。台账与逐条证据在 `book/.tmp/r71/report.md`。
+
+## R72–R76（2026-11-02）：按五个透镜续审五轮，新增 1 项书稿硬错 + 2 项观察 + 1 项源码注释冲突
+
+- 触发：用户在 R71 后要求“再继续审5轮”。R71 已完成 41 章+5 附录全文通读；本轮不重复同一读法，而是五轮不同透镜各自覆盖全书对应表面：R72 数值表/百分比、R73 源码契约/listing、R74 公式边界、R75 资源位宽计数、R76 回归与残余风险。主 agent 独立完成，不使用 subagent。
+- R72（数值表）：ch24/25/27/29–33/35/37 全部性能表与 appB 逐格复算，**0 项新硬错**；ch25 的 0.80/0.85/0.95/0.96、ch30 的 1.30/3.76/2.99、ch31 的 1.49–2.11、ch35/37 的 24+18 行全部在显示舍入带内。唯一观察是 ch33:460-461 的 “D512 2.98–3.16x” 漏写 causal 2.57x\* 与 cross 1.90x，属区间口径不完整。
+- R73（源码契约）：`check_mech.py` listings 227（含模板）、真实书稿 226 FAIL0，permalinks 53 FAIL0、tests refs 9 FAIL0；`tests/*.cu` 31 个扣除 ch13（sm_120a 自动跳过）与 ch15（无测试）正是附录 C 的 30 个可执行；ch37 的 17 条断言 = 7 主 case + 4 离线×2 + 2 tile。新增 **SRC-1**：冻结源码 `fp4_gemm.cuh:61-64` 写 e2m1 “相邻码点间距=2^{e-1}、相对步长最大25%（区间下沿）”，实际间距是 2^{e-2}、相对步长下沿是 **50%**；书稿 ch36:66-70 的 50%/25% 正确，源码注释两处各差一倍，互相掩盖。源码不改，记录待 CHECKLOG。
+- R74（公式边界）：重核 CuTe left/right inverse 定义、`raked_product` 的 `t=4i+⌊j'/8⌋,v=j'%8` 与 `4i+128v+j`、`logical_divide` 非整除 Size=12、ch27/29 的 `P̃=P·v_s·448` 与 `Ṽ=V/v_s` 消去、ch28/31/32 lse 符号、ch36 逐格误差表。**0 项新错误**。其中“P×448 少一个 vs”被 ch29:126-131 的 `P̃` 定义反证并撤回。
+- R75（资源计数与位宽）：R71 的 7 项全部复现；新增 **N-1（LOW，高置信）**：ch36:54-61 的 e2m1 表把 `e=0` 的同一 subnormal binade `[0,1)` 拆成 `[0,0.5]`/`[0.5,1]` 两行，和紧随其后的“同一区间内两个码点间距=区间半宽”自相矛盾；若按 Voronoi 应是 `[0,0.25]`/`[0.25,0.75]`，当前两组数都不对。仅动机表，不影响后面的 eq:36-grid。O-1（ch12:423/ch23:218-219 的 Swizzle 位字符串 7 位“不变”间隔与 M=4,S=3 不符）仍保留为观察，可能是不按比例示意。
+- R76（回归）：R71 的 7 项全部仍开放；机械层 anchors 33 章 ALL GREEN、lint 三类 FAIL0（1既有WARN）。另发现 **R76-T1 审核工具假 FAIL**：`check_mech.py` 把不在 `book.tex` 里的 `chapters/_template.tex` 纳入，模板示例 listing 无真实路径导致 “listings FAIL1”；排除模板后 226 处 FAIL0。R71 记录中的 listing 数应以此更正，不能把模板告警当书稿错误。
+- 结论：R72–R76 **0 项 A 级**，新增书稿硬错仅 N-1（ch36 表头区间），新增观察 N-2/O-1，新增源码侧 SRC-1 与工具侧 R76-T1；R71 的 7 项（ch02 双同步、ch12 Q5、ch33 2.6%、ch35 384×168、ch36 数值位、ch37 MNK、ch37 7.7%）仍是当前最值得修的书稿项。已知残余 medium 不重复升级。
+- 验证边界：本轮无书稿改动，未触发 PDF/RTD/visual_check；未重跑 GPU benchmark；sm_90a 仅静态。台账在 `book/.tmp/r72-76/report.md`。
+
+## R77–R86（2026-11-02）：十轮续审，0 项新 A/B 公式错误，但仍有 8 项开放
+
+- 触发：用户明确“再做10轮”，并指出此前“没有错误”的结论不可信。本轮按十个独立证据面执行：机械层、Part I–II 数值、Part III–IV 数值、Part V 数值、源码契约、Part I–II 公式、Part III–IV 公式、Part V 公式、资源/位宽计数、回归。**不把“未找到”写成“无错误”**；主 agent 独立完成。
+- R77 机械层：书稿真实 226 处 listing FAIL0（`check_mech.py` 因把 `chapters/_template.tex` 纳入而假报1）；permalink 53、tests refs 9 FAIL0；tests 31 个扣 ch13/ch15=30 可执行；appB 74 数中 11 个既有舍入/派生提示。R76-T1 假阳性已记录。
+- R78–R80 数值：ch00–ch14、ch15–ch26c、ch27–ch37 与 appB 的表逐格复算，0 项新硬错；新增 **N-4（ch37:994-996）**：部署口径 B-off E2E 550.5~561.2T 只覆盖 4096³，8192³ 实为 541.1/549.7T（主 kernel 的84~85%），属范围口径不完整，observation。
+- R81 源码契约：129/257、TMA descriptor、WGMMA base_offset、setmaxnreg、SF 布局、FP4 wide-tile 三维判据均通过；**SRC-1** 仍开放（`fp4_gemm.cuh:61-64` 的 e2m1 间距 `2^{e-1}`/相对步长25% 实际应为 `2^{e-2}`/50%，书稿正确，源码未改）。
+- R82–R84 公式：CuTe inverse/raked/divide、P×448 与 V/vs 消去、FA2 split-Q、split-D、two-level P、e2m1 逐格误差模型全部复核；此前“P×448 少乘 vs”的怀疑被 ch29:126-131 反证并撤回。0 项新公式错误。
+- R85 计数/位宽：R71 的 ch02/ch12/ch33/ch35/ch36/ch37 七项全部复现；N-1（ch36 e2m1 表把 `e=0` binade 拆成两行）仍开放。O-1（ch12/ch23 位串 7 位间隔与 M4,S3 不符）仍为观察，不升级为硬错。
+- R86 回归：书稿无改动；机械层 anchors/lint PASS，真实 listing 226 FAIL0；R71 七项 + N-1 = **8 项开放**，另有 O-1/O-2/O-3、SRC-1、R76-T1 与 6 项已知 medium。**本轮没有发现新的 A/B 级公式错误，也不宣布零错误**。
+- 验证边界：本轮无书稿/源码改动，未触发 PDF/RTD/visual_check；GPU 未复测。台账在 `book/.tmp/r77-86/report.md`；若下一轮继续，应先从 8 项开放项与 6 项 medium 开始，而不是重读已通过的表。
+
+## R87（2026-11-02）：对 R71–R86 错误项逐项深度复核，6 项硬错 + 2 项降级 + 4 项观察
+
+- 触发：用户要求“对这些错误项继续逐项深入审核，避免误判”。本轮不是新全量轮，而是把 R71–R86 的 14 个开放候选逐条回到原文/源码/定义/同章表格，按“证明原句其实成立”的方向复审；主 agent 独立完成，不用 subagent。
+- 复核后**降级 2 项**（此前判得过重）：
+  - R71-04 ch35 `384×168`：原文的“三个配置分配168”是真的；384×168 只对两个 WS 配置成立，non-WS 是256×168=43K，但两个 CTA 86K>64K，`1 CTA/SM` 结论仍成立。属主语/括号混合，不是资源结论错，降为观察。
+  - R71-06 ch37 `$MNK\ge4096$`：GPU 性能语境中 MNK 常作三元组简称，源码注释也写“MNK 全 >=4096”；按字面乘积会与“小形状回落”矛盾，但属记号歧义，不是事实错。降为观察，建议改 `min(M,N,K)`。
+- **维持 6 项书稿硬错**：ch02 图 fig:2-2 双 sync（源码/正文/问答只有1次）；ch12 Q5 的 `Tn>√R` 旧判据（4096³ Tn=32 却 +0.3%）；ch33 “最差 nonaligned 8K FFPA快2.6%”与表 341.1/342.3（慢0.35%）不一致（是 L4 表文冲突，不能反推实际性能一定慢）；ch36 “数值位”列8/3/1混用精度与显式尾数（应为8/4/2或7/3/1）；ch36 e2m1 表把 e=0 同一 binade 拆成两行；ch37 FP8 “2级>3级+7.7%”把 ch35 的 tile+深度混合差当纯深度差（同几何纯深度约2.8%/8.3%）。
+- **4 项观察**：ch33 D512 区间2.98–3.16x漏 causal2.57x*/cross1.90x；ch12:423/ch23:218-219 位串7位间隔与M4,S3不符（可能示意）；appD ch26c 缺 `ffpa_attn.cuh L642-1307` 内核链接；ch37 B-off 550.5~561.2T/91~93%只对4096³成立。均不升为硬错。
+- **源码/工具**：`fp4_gemm.cuh:61-64` 的 e2m1 间距2^{e-1}/25%实际应为2^{e-2}/50%，书稿正确，源码注释待CHECKLOG；`check_mech.py` 把 `_template.tex` 计入造成 listing FAIL1 假阳性，真实226处FAIL0。
+- 净结果：此前“8项开放”更正为 **6项书稿硬错 + 2项降级观察 + 4项观察 + 1项源码注释 + 1项工具假阳性**。本轮未改书稿/源码，未触发PDF/RTD；C3 的实际性能仍需原始 bench 日志，不能由表反推。台账 `book/.tmp/r87/report.md`。
+
+## R88（2026-11-02）：剩余 6 项错误项逐项反证复核，全部保留但性质分层
+
+- 触发：用户要求“再对剩余这6项深入审核，避免误判”。对 R87 的 6 项逐条做“先证明原句成立”的反证式复核；主 agent 独立完成。
+- C1 ch02 图双同步：源码/正文/问答/步数式都只有1次；第二道屏障无保护对象，确证 LOW。
+- C2 ch12 Q5 `Tn>√R`：4096³ Tn=32 远超√110≈10.5却仅+0.3%，正文已改用 L2 footprint，Q&A 旧句确证 LOW。
+- C3 ch33 2.6%：同表 nonaligned 8K 是 341.1 vs342.3（慢0.35%），16K慢1.18%，全仓无2.6%原始输出；判 **L4 表文证据链冲突**，不能反推实际性能一定错，LOW。
+- C4 ch36 数值位：8/3/1 无法用单一“显式尾数位”或“含隐含位精度”解释；同表 RMS 用 p=8/4/2。确证 LOW。
+- C5 ch36 e2m1 表：`000/001` 同为 e=0、同属 [0,1)，表却拆成 [0,0.5]/[0.5,1]；Voronoi 应为 [0,0.25]/[0.25,0.75]，确证 LOW。
+- C6 ch37 7.7%：ch35 的 7.7% 是 ws128×256/s2 对 ws128²/s3 的 tile+深度混合差，同几何纯深度约2.8%/8.3%；确证为归因措辞错误，LOW。
+- 本轮没有撤回项，也没有新的 A/B 级错误；C3 的边界明确为“表内不可复现”，不是“实测一定慢”。未改书稿/源码，未触发PDF/RTD。台账 `book/.tmp/r88/report.md`。
+
+## R89（2026-11-02）：用户授权后回修 R88 的 6 项确证错误并通过三层验收
+
+- 触发：用户要求“对这些错误逐条确认，确实有错的进行修改，没错的保留现状”。主 agent 逐项重读 R88 的 6 项后只修这 6 项；R87 已降级的 ch35 `384×168` 与 ch37 `MNK` 不改，4 项观察不纳入。
+- 回修：ch02 图 fig:2-2 删除第二次 `__syncthreads()`；ch12 Q5 改为 L2 footprint 判据；ch33 将无表内依据的“non-aligned 8K FFPA 快2.6%”改为表内 cross-dense +4.0%、non-aligned 两档慢0.4%/1.2%；ch36 “数值位”改“精度（含隐含位）”，bf16/e4m3/e2m1+ue4m3 改 8/4/2(+4)；ch36 e2m1 的 `000/001` 统一到共享的 e=0 binade `[0,1]`；ch37 将 FP8 7.7% 改为 tile+深度混合差并补同几何纯深度 2.8%/8.3%。
+- 细节防误修：括号中的 `ue4m3` 也必须按精度 p=4 处理，所以最终是 `2(+4)`，不是只把 e2m1 改成 2 而保留显式尾数 3；e2m1 前两行保留 8 个码点、第二行用“同上”，与后续“同一区间两码点间距=半宽”一致。
+- 验收：`git diff --check` 通过；anchors 33 章 ALL GREEN；lint 三类 0 fail（1 既有 WARN）；permalinks 53/tests refs 9 FAIL0，appB 11 个既有派生提示。主 PDF **591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15**，pdftotext 逐项命中新文本。RTD 全量 build（未跳 TikZ）全项 OK：英文图 195/195、代码 772/772、公式 121/121、词典 1922；`visual_check` 全部页面 MathJax/资源/表格/图/越界 0 问题。图 2-2 仍保留一次同步，词典无需删单元。
+- 边界：未重跑 GPU benchmark；ch33 的旧 2.6% 无原始日志，因此删除绝对断言而不是补写新性能结论；SRC-1 源码注释不回写，R76-T1 为工具假阳性。台账 `book/.tmp/r89/report.md`。
+
+## R90–R99（2026-11-02）：十轮深度审核，新增 ch26c 区间外推错误
+
+- 触发：用户在 R89 回修后要求“再做10轮深度审核”。按十个证据面覆盖 Part I–II 表、Attention/CuTe 表、FP8/FP4 表、源码/PTX、公式边界、计数与回归；主 agent 独立完成，不使用 subagent。
+- **新发现 N-5（LOW，L4 区间/数据一致性）**：ch26c 把 D=384 的结论外推到 D≥384。
+  - 表 `ch26c:684-690`：D=384 (3,3) spill=2184、TFLOPS136.0（-27.4%）；D=512 (3,3) spill=**1876**、TFLOPS163.4（**-4.4%**），而 D=512 (2,2) spill=2460。
+  - `ch26c:741` 图注写“D≥384 后 stages 加深进一步推高溢出（(3,2)1676、(3,3)2184，均高于(2,2)）”；D=512 时 (3,3)1876 反而低于 (2,2)2460。
+  - `ch26c:760` 正文写“D≥384 时 … (3,3)下降27%”；D=512 实际为 -4.4%。结论“D≥384 最优回到(2,2)/(2,3)”仍成立，错的是对 spill 方向与降幅的区间外推。
+  - 修法：把 741 的“均高于”限定为 D=384；把 760 拆成 “D=384 -27.4%、D=512 -4.4%”。表与图数据不动。
+- R90–R99 其余九轮：Part I–II ch09/ch10/ch11 表、ch27 ESS、ch30 D/吞吐、ch31/ch32/ch33/ch35/ch37 表、源码/PTX 契约、公式边界均复算通过；0 项新 A/B 级错误。R89 的 6 项修改无回退，4 项观察与 SRC-1/R76-T1 状态不变。
+- 验证边界：本轮无书稿改动，未触发 PDF/RTD；N-5 等下一轮回修。台账 `book/.tmp/r90-99/report.md`。
+
+## R100（2026-11-02）：复审并修复 N-5（ch26c 的 D≥384 区间外推）
+
+- 触发：用户要求“复审新发现的错误，如果确实是错误就修复”。仅复审 R90–R99 新增的 N-5，主 agent 独立完成，不使用 subagent。
+- 复审证据：表和 `fig:26c-spill` 一致给出 D=384 `(3,3)` spill=2184 B、相对 `(2,2)` 下降 27.4%；D=512 `(3,3)` spill=1876 B，低于 `(2,2)` 的 2460 B，TFLOPS 仅下降 4.4%。原文把 D=384 的“更高 spill”和“下降 27%”写成 D≥384 的普遍规律，确证为 LOW 的 L4 区间/数据一致性错误；最优组合回落的结论不变。
+- 回修：只改 `chapters/ch26c-cute-split-d-sm120.tex` 两处。图注限定为 D=384 实测点并补 D=512 spill 反例；正文分别列出 D=384 的 15.5%/27.4% 与 D=512 的 4.4%。表格、TikZ 数据、其他章节、冻结源码和 RTD 词典不改。
+- 验收：`git diff --check` 通过，anchors 33 章 ALL GREEN，lint 三类 0 fail（1 条既有 WARN）；主 PDF 591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15；RTD 全量 build 全项 OK（英文图 195/195、代码 772/772、公式 121/121）；`visual_check` 93 页需处理 0。`check_mech` 的模板 listing FAIL 仍为已知假阳性，permalinks 53/tests refs 9 FAIL 0。
+- 边界：未重跑 GPU benchmark；未找到可推翻书内表格/图数据的原始实验日志；未提交 commit。台账 `book/.tmp/r100/report.md`。
+
+## R101–R110（2026-11-02）：十轮深度审核，新增 ch19 的 smem 阈值区间错误 + 附录 B 三处漂移
+
+- 触发：用户在 R100 后要求“再做 10 轮深度审核，尽量发现隐藏错误”。按十个证据面推进（Part III 数学 / 大 D 阈值 / CuTe 布局与位模型 / TiledMMA 计数 / ch26c 协议 / 量化数学 / 量化性能表 / 附录 B 回指 / 机械面 / 高风险词与图注独有数字）。主 agent 独立完成，不使用 subagent。
+- **N-1（MEDIUM，L1/L4 区间）**：`ch19:82` 写“$D\ge512$ 时连 Q/K/V 各一份都放不下”，但同段公式 $3\cdot64\cdot D\cdot2$ B 给出 $D{=}320\to120$ KB、$D{=}384\to144$ KB，均超 99 KB；书中又写明 $D{=}256$ 的 96 KB「恰好只够各一份」，越界点应是 **320**（$D$ 取 64 的倍数）。D=320 正是 Part V 反复使用的形状。修法：改 `D≥320` 并补「D=320 已到 120 KB」；表 19-walls 与 Q1 举例（D=512）不动。
+- **N-2/N-3/N-4（LOW，附录 B 转录）**：① 424 μs/次的 fp8 量化链被标为「第34」，该数字只出现在 ch35 §8.2（736−312），ch34 无性能节，按附录 B 自述的“转录自各章性能分析节”改为「第35」；② 2.71×→2.72×（76.55/28.19=2.7155，ch11 正文即 2.72）；③ 3.144→3.145 ms（与 ch09 表一致）。
+- **N-5（LOW，同章漂移）**：`ch33:494` 的「4.96 vs 8.13ms」与本章 `tab:33-fp4-matrix`/`tab:33-fp8-matrix` 的 4.97/8.12 不一致，统一到表值并加表引用。
+- **N-6（LOW，交叉引用）**：`ch21:69` 导读把“Tensor 是什么”指向 4.1 节（kernel 骨架），定义实际在 3.1 节（标题即「Tensor：engine 与 layout」），改为「3.1 节；4.1 节是它的 kernel 实例」。
+- **未改观察**：① `ch30:50` 把「D≤224」归因于 smem（Q 槽位复用），但按 `ch29` 的 `kSmemElems`（复用后 smem=(Sk+Sv)·kBc·D，D>128 时 kBc=64），D=224 只有 42 KB、D=512 也仅 96 KB，公式给不出 224；缺 `persist_d.cuh` 完整 traits，不硬改。② `ch27:486`「SA2++ 两侧各收窄一半」在“相对可行点集两端 (448,2.25)/(112,9) 取中点”的读法下成立，保留。
+- **不重复报**：节号体例（252 处文件序号 vs 印刷 1-based，R21 已登记不改；本轮只记录 6 处反而写成印刷号：ch10:156、ch13:858、ch15:711、ch16:732、ch31:161/197）；ch26c VCPB、ch27 四误差源、ch33 smooth-v、ch36 3.24/10.17、ch29 wait 考据仍为残余 medium。
+- 验收：`git diff --check` 通过；lint 三类 0 fail（1 条既有 WARN）；anchors 33 章 ALL GREEN；主 PDF **591 页 / 0 error / 0 undefined / 缺字 0 / Overfull 15**（与基线一致），`pdftotext` 逐条命中 5 处新文本；RTD 全量 build（未跳 TikZ）`convert.verify` 全 OK（英文图 195/195、代码 772/772、公式 121/121、词典 1922）；`visual_check` 93 页需处理 0。未重跑 GPU benchmark，性能数字只做书内一致性核对。台账 `book/.tmp/r101-110/report.md`。
+
+## R112（2026-11-02）：colfax 中文译注分册首轮正确性审核
+
+- 触发：用户要求按 `leetcuda-correctness-review` 对 `book/colfax` 做正确性审核。主 agent 独立完成，不使用 subagent。
+- 范围：`colfax-cute-zh.tex` 实际 input 的 16 个 TeX 文件、11,906 行；全文阅读正文、证明、例子、TikZ 图注、标签与引用。外部对照：arXiv:2601.05972 官方 `FinalVersion.tex` 与 NVlabs/CuTe（PyCuTe `d8e31a7`）。
+- 结论：翻译本身总体忠实，但原文/译文含多处数理与转录错误。确认并回修约 68 组内容问题，另消除 12 处活跃 label 冲突；重点包括：ch2b “Φ 非减⇒已排序”缺正步长前提（反例 `(3,2):(0,0)`）、全零步长已合并判据 `m≤1` 错、ch2c N-补兼容性把定义域写成 `[0,N1)`、秩 1 复合 `td_i→ed_i`、ch2d Q-代入切分指标与 `P_r/P_m`、ch2e 非退化定义缺谓词、ch2f 紧凑例子 stride 8→9、ch3a `α≠1→≠*`、ch3b/ch3e 切分未要求 g 可求补、ch3e m=1 合并漏 `α(1)=*` 与例子陪域、ch4a 相互加细算法尾部漏 X/末项、ch4b 逻辑切分结果 `((2,2),(2,2))→((2,2),(2,8))`。
+- 反向自辩：ch4a 四个复合例题经 PyCuTe 复算全部正确，撤回；ch3d “行首冒号”是 read_file 行号前缀误判；逻辑乘积证明的 `cosize(g)≤size(codomain g)` 对 tuple morphism 成立，撤回。
+- 验收：`colfax/build.sh`（临时 biber）205 页 / 0 error / 0 undefined / 缺字 0 / Overfull≥1pt 0；活跃 label 重复 0、悬空 0；`git diff --check` 通过；PyCuTe 复算复合/切分/乘积/N-补/紧凑性示例与修订文本一致。colfax 不在 RTD 源集合，未触发 RTD；未改主 book / cute-zhihu。
+- 残余：ch2f 两个只给形状、未给步长的逻辑切分例子无法唯一还原，保留 observation。报告与台账 `book/.tmp/colfax-audit/`。

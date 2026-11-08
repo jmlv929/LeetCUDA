@@ -149,9 +149,9 @@ ch16 的 BHND 布局）。
 元素、block 大小 $T$：
 
 \begin{equation}
-  \text{标量版}:\ \frac{N}{T} \text{ 线程} \times 2 \text{ 条访存指令},
+  \text{标量版}:\ N \text{ 线程} \times 2 \text{ 条访存指令},
   \qquad
-  \text{vec4 版}:\ \frac{N}{4T} \text{ 线程} \times 2 \text{ 条访存指令},
+  \text{vec4 版}:\ \frac{N}{4} \text{ 线程} \times 2 \text{ 条访存指令},
 \end{equation}
 warp 级访存指令数从 $N/32$（标量，每方向）降到 $N/128$（vec4，每方向），每元素摊得的访存指令数从 2 降到
 $1/2$（线程数与总指令数降为 1/4，每线程仍是 1 条 128-bit load + 1 条
@@ -399,8 +399,7 @@ $\pm 2\%$ 噪声内）。因为此时瓶颈在 L2/互联的搬运能力而非指
 vec4 的 1/4 指令量与 4 倍 ILP 可能带来收益；工作集大于 L2 并不单独保证这一点，
 仍需按层级实测。工程结论是先看清瓶颈层级，再选优化手段。
 
-histogram 比 elementwise 慢两个数量级（26.7 vs 2654 GB/s，
-0.63 ms vs 0.019 ms）。4M 次原子均摊每次约 $0.63\,\mathrm{ms}/4.2\mathrm{M}
+histogram 比 elementwise 慢约 33 倍（0.63 vs 0.019 ms）、有效带宽低约两个数量级（26.7 vs 2654 GB/s）。4M 次原子均摊每次约 $0.63\,\mathrm{ms}/4.2\mathrm{M}
 \approx 0.15\,\mathrm{ns}$，单看均摊延迟并不差（256 个 bin 提供了并行度，
 反而低于 ch02 同址全局求和的 2.6 ns/op）。慢在总量：按 256 bin 理想并行
 + 同址 2.6 ns 串行的模型，理想耗时约 $4.2\mathrm{M}/256 \times 2.6\,\mathrm{ns}
@@ -452,7 +451,7 @@ dot\_vec4 不是同一类问题：dot 的两次读落在守卫之外，只要 $N
 \item \textbf{histogram 忘记清零}：atomicAdd 是加在旧值上，复用缓冲区
   时若不 memset，两轮结果会叠加，本测试每轮 bench 前显式 memset。
 \item \textbf{把原子当免费}：全局原子吞吐有上限（同址串行化），热点地址
-  会让 kernel 慢百倍（\S\ref{sec:ch03-perf} 实测 99 倍差）。先问冲突域
+  会显著拖慢 kernel（\S\ref{sec:ch03-perf} 实测耗时约 33 倍、有效带宽仅约 1/99）。先问冲突域
   能不能缩小：smem 私有化、分桶、thread-warp 内先归约再提交。
 \item \textbf{原子还破坏确定性}：与 ch02 的浮点 atomicAdd 同理，冲突
   顺序不定 $\Rightarrow$ 累加型原子的结果 run-to-run 抖动；int 计数

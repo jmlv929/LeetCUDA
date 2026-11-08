@@ -76,9 +76,9 @@ user-invocable: true
 后三层必须去找外部事实，不能继续在同一套叙述里反复读。遇到“公式没错但
 读起来顺”的句子，优先怀疑推导跳步、量词方向、名词指称、作用域或单位。
 
-## 2.1 当前正确性状态与审核者校准（2026-10-25 快照）
+## 2.1 当前正确性状态与审核者校准（2026-10-28 快照，R65）
 
-**这不是永久结论，也不是“零错误”证明。** 它只描述当前工作树（R60）在
+**这不是永久结论，也不是“零错误”证明。** 它只描述当前工作树（R65）在
 第零层 + 四层审查下的置信状态；书稿再改、源码/版本变化后必须重审。
 
 | 文档 | 总体判断 | 最强 | 最弱 | 不能宣称 |
@@ -89,15 +89,22 @@ user-invocable: true
 **例外**：`chapters/ch19b-cute-whitepaper-zh.tex` 是 CuTe 官方白皮书的纯翻译，
 不参与上表的 L0–L4 逐条审核；只通读一遍作为 CuTe 术语/概念基线（见 §1.1）。
 
-当前构建状态（只证明“产物能生成/页面可渲染”，不证明内容正确）：
+当前构建状态（只证明“产物能生成/页面可渲染”，不证明内容正确）。R65 复核未改
+书稿，下列数字是 R64 末次构建的基线：
 
 ```text
-book.pdf：589 页，0 error / 0 missing，Overfull 16
-cute-zhihu.pdf：248 页，0 error / 0 missing，Overfull 6
+book.pdf：591 页，0 error / 0 undefined / 缺字 0，Overfull 15（R64）
+cute-zhihu.pdf：248 页，0 error / 0 missing，Overfull 6（2026-10-25）
 colfax-cute-zh.pdf：204 页，0 error / 0 missing，Overfull 0（2026-10-25 本地补依赖后）
-RTD：英文图集 1883 条 / 1792 单元 / 英文图 196/196，代码 771/771，公式 121/121
+RTD：英文图 195/195、图词典 1922、代码 772/772、公式 121/121
 visual_check：93 页，需处理 0
 ```
+
+**R65 结论**：主 book 全量复核零 H/M 新增，3 项 LOW（ch25:166 smem 口径、ch34:224
+「3 个」应为 2、ch37:995 转录漂移）**已全部回修并跑满 PDF+RTD 三层验收**，机械面三项
+0 FAIL、anchors 33 章 ALL GREEN、listing/permalink 全通；R62 的 P-5 appB 舍入项仍维持「不改」。
+**例行全书通读到此收账**：除非书稿大改或用户
+明确要求，后续只做「改哪章审哪章」的定点复核 + 发布前三层验收。
 
 ### 审核者的四条校准规则
 
@@ -222,11 +229,72 @@ ID | 文件:行 | 断言 | 层级 | 类型 | 证据 | 判定 | 处置
 1. 定义/定理与反例；
 2. CUTLASS/CuTe 头文件、PTX ISA、CUDA 文档的具体段落；
 3. 被审源码的调用点；
-4. host-only 编译探针 / `static_assert`；
-5. GPU 测试日志（只能证明该 case 跑通，不能证明解释正确）；
-6. 无证据（标 `未验证`）。
+4. **PyCuTe 纯 host 复算**（布局代数，见 Step 2.5；不需要 GPU）；
+5. host-only 编译探针 / `static_assert`；
+6. GPU 测试日志（只能证明该 case 跑通，不能证明解释正确）；
+7. 无证据（标 `未验证`）。
 
 没有证据的断言不能写成“已确认”。
+
+### Step 2.5：CuTe 布局断言的 PyCuTe 纯 host 复算
+
+NVlabs 的 [PyCuTe](https://github.com/NVlabs/CuTe) 是 CuTe 布局代数的
+**纯 Python 参考实现**，不需要 GPU、torch 或 CUDA runtime。凡是书中涉及
+`Layout` / `size` / `cosize` / `coalesce` / `composition` / `complement` /
+`logical_divide` / `logical_product` / `right_inverse` / `nullspace` 的
+具体数值或结构断言，除了手工推导，优先再跑一遍 PyCuTe，作为 L0/L1 的独立
+证据。
+
+**安装（首次，或换机器后）：**
+
+```bash
+CUTE_SRC=${CUTE_SRC:-$HOME/develop/CuTe}
+git clone https://github.com/NVlabs/CuTe.git "$CUTE_SRC"
+python3 -m venv "$CUTE_SRC/.venv"
+"$CUTE_SRC/.venv/bin/pip" install -e "$CUTE_SRC"
+git -C "$CUTE_SRC" rev-parse --short HEAD   # 记录版本，例如 d8e31a7
+```
+
+Python 3.10+ 即可；核心布局代数没有第三方依赖。已安装的 venv 直接调用：
+
+```bash
+"$CUTE_SRC/.venv/bin/python" .tmp/<task>/check_layout.py   # 在 book/ 下运行
+```
+
+**典型探针：**
+
+```python
+from pycute import Layout, coalesce, composition, complement, logical_divide, logical_product, size
+
+A = Layout((8, 8), (8, 1))
+B = Layout((16, 16), (16, 1))
+C = composition(B, A)
+print(C)
+assert C == Layout(((2, 4), 8), ((128, 1), 16))
+
+# 检查 size/是否双射（只对可枚举的小布局）
+vals = {A(i) for i in range(size(A))}
+assert len(vals) == size(A) and max(vals) + 1 == size(A)
+
+print(complement(Layout((3, 10), (80, 4)), 2400))
+print(logical_divide(Layout((8, 8), (8, 1)), Layout((2, 2), (1, 4))))
+print(logical_product(Layout((2, 2), (1, 2)), Layout((5, 5), (5, 1))))
+```
+
+注意：当前 PyCuTe 未导出 `cosize`；需要它时按定义用
+`max({L(i) for i in range(size(L))}) + 1` 或独立公式计算，不能误用 `size`。
+
+**判定纪律：**
+
+- 复算必须用书内**原始 shape/stride/参数**，不要先“修正”再验；把脚本与
+  输出落盘到 `book/.tmp/<task>/`，并在 ledger 证据列写 PyCuTe + 版本。
+- 比较布局时优先比较规范化 `Layout` 或逐坐标 `A(i)` 的值，不要只比打印
+  字符串的括号/空格。
+- PyCuTe 只覆盖布局代数；**不能**用它证明 PTX/指令语义、寄存器/smem 计数、
+  TMA/mbarrier 协议或性能数字。这些仍按 L2/L3 回 CUTLASS 头文件、PTX 与
+  源码；发生冲突时以被审版本的头文件/PTX 为准。
+- PyCuTe 自身也是参考实现；若它与书稿、C++ CuTe 三方不一致，先缩小到
+  最小 shape/stride，再判定是哪一方的口径或版本问题。
 
 ### Step 3：第零层 + 四层审查
 
@@ -700,7 +768,8 @@ agent 候选（如有）：
 - 受影响 PDF：book.pdf / cute-zhihu.pdf（逐个列 exit / pages / Overfull / error / undefined / missing）
 - RTD build.sh + convert.verify：<pass/fail，失败项>
 - visual_check：<MathJax / console / 404 / 版式>
-- GPU：未做/已做（与 PDF/RTD 验收分开记）
+- PyCuTe host 复算：<脚本路径 / 版本 / pass-fail>
+- GPU：未做/已做（与 PDF/RTD、PyCuTe 验收分开记）
 残余风险：...
 ```
 
@@ -717,6 +786,8 @@ agent 候选（如有）：
   范围、发现、修正、验证与残余风险；每轮自审结束后追加。
 - `scripts/scan_risky_claims.py`：书稿高风险断言候选扫描；只做候选列表，
   不能替代人工判定。
+- [NVlabs/CuTe](https://github.com/NVlabs/CuTe)：PyCuTe 纯 Python 布局代数
+  参考实现；按 Step 2.5 用于 host-only 复算，不需要 GPU。
 
 ## 9. 禁止事项
 

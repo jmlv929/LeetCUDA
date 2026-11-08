@@ -7,7 +7,8 @@
 \section{口径与标尺}
 
 除单独标注外，本附录所有数字都是本书复测：RTX PRO 5000 72GB（sm\_120a，110 SM，
-L2 96MB，CUDA 13.2），cudaEvent 计时，warmup 3--5 + 10--20 次取均值；第 04 章两行是
+L2 96MB，CUDA 13.2），计时与聚合方式以各章口径为准（基础复测多为 cudaEvent
+取均值，FFPA bench 按第~\ref{ch:33}~章的 pre-heat 与 min-of-N）；第 04 章两行是
 旧 bench 历史记录（修复 $S\cdot N$ 参数后未复测），不作为当前口径；roofline 标尺
 取自第~\ref{ch:01}~章（GDDR7 理论带宽 1344~GB/s、FP32 峰值估算 66.9~TFLOPS、
 ridge point $\approx 49.8$~FLOP/B）。读表先记三件事：（1）带宽型算子分 L2/HBM
@@ -35,9 +36,9 @@ ridge point $\approx 49.8$~FLOP/B）。读表先记三件事：（1）带宽型�
 第05 & \texttt{merge\_\allowbreak{}attn\_\allowbreak{}states} & $T{=}16384$，$H{=}32$，$D{=}128$ & 0.785~ms；1031.4 GB/s & HBM 理论带宽的 77\% \\
 第07 & \texttt{mat\_\allowbreak{}transpose\_\allowbreak{}padded} & $2048^2$ & 0.0145~ms；2320 GB/s & 2.40$\times$ vs naive（L2 口径） \\
 第08 & \texttt{sgemv} k128 & $M{=}8192$，$K{=}4096$ & 0.144~ms；934.2 GB/s & 全书实测带宽参照；较 k32 +5.2\% \\
-第09 & \texttt{sgemm\_vec4} & $2048^3$ & 0.661~ms；25.97 T & 4.76$\times$ vs naive（3.144~ms，5.46 T） \\
+第09 & \texttt{sgemm\_vec4} & $2048^3$ & 0.661~ms；25.97 T & 4.76$\times$ vs naive（3.145~ms，5.46 T） \\
 第10 & \texttt{sgemm\_tf32} & $1024^3$ & 28.19 T & 换 Tensor Core 的第一步 \\
-第11 & \texttt{hgemm\_\allowbreak{}mma\_\allowbreak{}stages\_\allowbreak{}tn} & $1024^3$ & 76.55 T（f16 acc） & 2.71$\times$ vs 第10章 TF32 \\
+第11 & \texttt{hgemm\_\allowbreak{}mma\_\allowbreak{}stages\_\allowbreak{}tn} & $1024^3$ & 76.55 T（f16 acc） & 2.72$\times$ vs 第10章 TF32 \\
 第12 & 7b-1（BK=16） & $4096^3$ & 124.7 T & 7b-3 反而 118.6--119.0 T \\
 第14 & \texttt{hgemm\_\allowbreak{}tma\_\allowbreak{}mma\_\allowbreak{}ws\_\allowbreak{}tn} & $2048^3$ & 0.104~ms；164.64 T & 1.57$\times$ vs 第11章同形状 104.66 T \\
 第16 & FA2 split-Q（F32Acc） & $B{=}1$，$H{=}32$，$N{=}4096$，$D{=}64$ & 0.781~ms；175.88 T & F16Acc 166.56 T（F32 反快 +5.6\%） \\
@@ -180,12 +181,12 @@ fp16 HGEMM 同吞吐 proxy（$\approx$243~T；不是 bf16 kernel）的口径为 
 \endfoot
 \bottomrule
 \endlastfoot
-第34 & fp8 量化前处理链 & $4096^3$（E2E 与 kernel-only 之差） & $\approx$424~$\mu$s/次 & 纯带宽工序；两遍读+staging 有 $\sim$2$\times$ 优化空间（35.8.2 习题） \\
+第35 & fp8 量化前处理链 & $4096^3$（E2E 与 kernel-only 之差） & $\approx$424~$\mu$s/次 & 纯带宽工序；两遍读+staging 有 $\sim$2$\times$ 优化空间（35.8.2 习题） \\
 第35 & fp8 GEMM CuTe NonWS & 2048$^3$/4096$^3$/8192$^3$ & 244/441/484~T（1.77/2.70/2.96$\times$） & kernel-only vs cuBLAS BF16；上限口径 1.81$\times$（4096$^3$）；WS 版 +0$\sim$0.9\% \\
 第35 & fp8 GEMM+Quant E2E & 同上 & 76/187/315~T（0.55/1.14/1.93$\times$） & 量化开销随 shape 缩小占比放大；2048$^3$ 反而更慢 \\
 第35 & fp8 GEMM+A-Quant E2E（$B$ 离线） & 同上 & 226/411/429~T（1.64/2.52/2.63$\times$） & 权重量化一次后落盘，每步只量化 A（$O(MK)$）；数值与全链路逐 bit 一致（35.8.3 节）；WS 版 +0.5$\sim$1.1\% \\
 第35 & fp8 WS + setmaxnreg & 4096$^3$ & 440.9~T（2.70$\times$） & 直调 cutlass::arch API；SASS 4 实例 $\times$ 2 条 USETMAXREG 实证；sm\_120a/f 均可 \\
-第35 & fp8 tile/深度扫描（non-WS） & 4096$^3$/8192$^3$ & 219$\sim$442 / 240$\sim$485~T & tile $\{64,128,256\}^2\times$ stages $\{2,3,4\}$：$BN$ 比 $BM$ 更有效（$128\times256$ vs $256\times128$ 两档都 $\approx+8.5\%$），s2/s3 差 $\le2\%$、s4 无收益，$256\times256$ 超 99\,KB 装不下（35.8.4 节）\\
+第35 & fp8 tile/深度扫描（non-WS） & 4096$^3$/8192$^3$ & 219$\sim$442 / 240$\sim$485~T & tile $\{64,128,256\}^2\times$ stages $\{2,3,4\}$：$BN$ 比 $BM$ 更有效（$128\times256$ vs $256\times128$ 两档都 $\approx+8.5\%$），s2/s3 在多数几何接近、$64\times128$ 等配置有例外，s4 无稳定收益，$256\times256$ 超 99\,KB 装不下（35.8.4 节）\\
 第35 & fp8 最优 tile（ws 128$\times$256/s2） & 4096$^3$/8192$^3$ & 443.7/487.8~T（2.72/2.99$\times$） & 即库默认档（同时是大形状全场最优）；比 128$^3$/s3 快 7.7\%/5.9\%；$2048^3$ 上因波次量化反慢 17\%；NCU：pipe\_tensor 80.9\%（elapsed）、寄存器 168/线程、bank conflict 0、smem 读波前 $-5.6\%$（35.8.5 节） \\
 \end{longtable}
 \endgroup
@@ -198,6 +199,12 @@ FA2，更大 $D$ 选择 MATH。数字为 \texttt{ffpa\_attn.bench} CLI 复测
 （B1 H32 Hkv8 N=8192，fp16，PRO 5000，2026-09-16；tol 分档
 fp8 5e-2 / fp4 dense 0.15、causal 0.70）。speedup 一律对 SDPA 同形状。
 列内数字取自各自所在章节的原始记录，跨章对比时注意口径。
+
+第七部分（第~\ref{ch:38}--\ref{ch:40}~章，SVDQuant 篇）\textbf{无本书复测
+数据}：该三章讲解 cache-dit 仓库的外部 kernel，其性能数字全部转述自
+cache-dit 开发记录（各表已注明来源/日期/口径，CUDA Event 或 nsys，
+RTX PRO 5000/PRO 6000），本书未执行复测；读者侧复测入口见
+第~\ref{ch:40}~章 43.10~节与附录~\ref{app:C}。
 
 \begingroup\small
 \begin{longtable}{p{1.6cm}p{3.6cm}p{2.6cm}p{3.0cm}p{3.0cm}}
